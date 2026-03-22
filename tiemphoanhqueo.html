@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tiệm Phở Quẹo - Cảnh Sát Ngầm (Bản Cuối)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #game-canvas { display: block; width: 100vw; height: 100vh; }
+        
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        #start-screen { background: radial-gradient(circle, rgba(30,41,59,0.95) 0%, rgba(0,0,0,1) 100%); pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; }
+        
+        #hud { display: none; z-index: 10; }
+        .panel { background: rgba(15, 23, 42, 0.85); border: 2px solid #475569; border-radius: 12px; padding: 12px; pointer-events: auto; color: white; text-shadow: 1px 1px 2px black; box-shadow: 0 4px 6px rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+        
+        #mobile-controls { display: none; position: absolute; bottom: 0; width: 100%; height: 200px; pointer-events: none; z-index: 20; }
+        #joystick-zone { position: absolute; bottom: 30px; left: 30px; width: 130px; height: 130px; background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; pointer-events: auto; touch-action: none; }
+        #joystick-knob { position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 4px 8px rgba(0,0,0,0.4); pointer-events: none; }
+        
+        #action-btn { position: absolute; bottom: 40px; right: 40px; width: 90px; height: 90px; background: linear-gradient(145deg, #ef4444, #dc2626); color: white; border-radius: 50%; font-weight: 900; font-size: 15px; display: flex; align-items: center; justify-content: center; pointer-events: auto; box-shadow: 0 6px 0 #991b1b, 0 10px 15px rgba(0,0,0,0.5); text-align: center; line-height: 1.2; border: 2px solid #f87171; text-transform: uppercase; }
+        #action-btn:active { transform: translateY(6px); box-shadow: 0 0 0 #991b1b, 0 2px 5px rgba(0,0,0,0.5); }
+        
+        #instructions-modal { display: none; background: rgba(0,0,0,0.9); pointer-events: auto; z-index: 60; }
+        
+        .notification { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 2px solid #fbbf24; color: #fbbf24; padding: 10px 20px; border-radius: 8px; font-weight: bold; opacity: 0; transition: opacity 0.3s, top 0.3s; z-index: 40; font-size: 16px; text-align: center; white-space: nowrap; }
+        .notification.show { opacity: 1; top: 40px; }
+
+        .floating-text { position: absolute; color: white; font-weight: bold; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; pointer-events: none; transform: translate(-50%, -100%); font-size: 12px; z-index: 5; text-align: center; width: 100px;}
+    </style>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="html-labels" class="overlay"></div>
+
+    <div class="overlay" id="ui-layer">
+        
+        <!-- HUD -->
+        <div id="hud" class="w-full h-full relative">
+            <div class="panel absolute top-4 left-4 w-56">
+                <div class="font-black text-xl mb-1 text-yellow-400 tracking-wider">TIỆM PHỞ QUẸO</div>
+                <div class="text-xs text-gray-300 mb-2 pb-2 border-b border-gray-600">Hồ sơ ngầm: Đang làm nhiệm vụ</div>
+                <div class="flex justify-between items-center mb-1"><span class="text-sm">Tiền quỹ:</span> <span id="ui-money" class="text-green-400 font-bold text-lg">0đ</span></div>
+                <div class="flex justify-between items-center mb-1"><span class="text-sm">Phở bán:</span> <span id="ui-bowls" class="font-bold">0 tô</span></div>
+                <div class="flex justify-between items-center"><span class="text-sm">Tội phạm bắt:</span> <span id="ui-criminals" class="text-red-400 font-bold">0</span></div>
+            </div>
+
+            <div class="panel absolute top-4 right-4 w-48 text-right">
+                <div class="font-bold text-md mb-1 text-orange-400">🐕 Cậu Vàng</div>
+                <div class="text-sm text-green-400 mb-1">Đang bám sát...</div>
+                <div class="flex justify-end gap-2 mt-2">
+                    <span class="bg-gray-700 px-2 py-1 rounded text-xs text-white">WASD: Di chuyển</span>
+                    <span class="bg-gray-700 px-2 py-1 rounded text-xs text-white">Space: Hành động</span>
+                </div>
+            </div>
+
+            <div id="notification" class="notification"></div>
+        </div>
+
+        <!-- Controls -->
+        <div id="mobile-controls">
+            <div id="joystick-zone"><div id="joystick-knob"></div></div>
+            <div id="action-btn">Nấu Phở<br><span class="text-xs font-normal">/ Bắt Trộm</span></div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="absolute inset-0">
+            <h1 class="text-5xl md:text-6xl font-black text-yellow-500 mb-2 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] text-center uppercase">Tiệm Phở Quẹo</h1>
+            <h2 class="text-xl md:text-2xl text-red-500 mb-8 font-bold tracking-widest text-center">CẢNH SÁT NGẦM - CHUYÊN ÁN MẬT</h2>
+            
+            <button id="btn-start" class="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-12 rounded-lg text-2xl border-b-4 border-red-800 shadow-[0_0_20px_rgba(220,38,38,0.5)] transition transform hover:-translate-y-1 mb-6">
+                VÀO CA LÀM VIỆC
+            </button>
+            <button id="btn-guide" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-lg text-lg border-b-4 border-slate-900 shadow-lg transition transform hover:-translate-y-1">
+                📖 XEM HỒ SƠ NHIỆM VỤ
+            </button>
+        </div>
+
+        <!-- Instructions -->
+        <div id="instructions-modal" class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-slate-900 text-white p-6 md:p-8 rounded-2xl max-w-3xl w-full border-2 border-yellow-500 overflow-y-auto max-h-[90vh] shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-4 mb-4">
+                    <h2 class="text-3xl font-black text-yellow-500">HỒ SƠ CHUYÊN ÁN</h2>
+                    <button id="btn-close-guide" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm leading-relaxed">
+                    <div>
+                        <h3 class="text-lg font-bold text-blue-400 mb-2">👤 NHÂN VẬT</h3>
+                        <p class="mb-2"><strong>Anh Quẹo:</strong> 36 tuổi, 1 vợ 2 con. Vỏ bọc là chủ tiệm phở, thân phận thật là Cảnh Sát Ngầm.</p>
+                        <p class="mb-2"><strong>Đồng minh:</strong> Vợ & 2 con nhỏ (Phụ quán), Cậu Vàng (Chó nghiệp vụ).</p>
+                        <p><strong>Địa bàn:</strong> Phố có Đồn Công An, Tiệm Net, Tạp Hóa.</p>
+                        
+                        <h3 class="text-lg font-bold text-red-400 mt-4 mb-2">🎯 MỤC TIÊU (KẺ ĐỊCH)</h3>
+                        <p class="mb-1">- Trộm Chó (Thường xuyên rình rập).</p>
+                        <p>- Giang hồ các băng: <strong>GS, SBTC, WK, TL, LOW</strong> (Mặc đồ đen/đỏ).</p>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-lg">
+                        <h3 class="text-lg font-bold text-green-400 mb-2">🎮 CÁCH CHƠI</h3>
+                        <ul class="list-disc pl-5 space-y-2">
+                            <li><strong>Di chuyển:</strong> Dùng Cần gạt ảo (Mobile) hoặc <kbd class="bg-gray-700 px-1 rounded">W</kbd><kbd class="bg-gray-700 px-1 rounded">A</kbd><kbd class="bg-gray-700 px-1 rounded">S</kbd><kbd class="bg-gray-700 px-1 rounded">D</kbd> (PC).</li>
+                            <li><strong>Bán phở:</strong> Lại gần Nồi Phở bấm <span class="text-red-400 font-bold">Nút Đỏ</span> (hoặc Space) để múc phở. Sau đó mang lại bàn có khách đang chờ, bấm tiếp để giao (+45.000đ).</li>
+                            <li><strong>Bắt trộm:</strong> Khi thấy giang hồ chạy ngang, đuổi theo và bấm <span class="text-red-400 font-bold">Nút Đỏ</span> để tóm cổ tống vào Đồn Công An kế bên (+200.000đ).</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="mt-8 flex justify-center">
+                    <button id="btn-close-guide-2" class="bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 px-10 rounded-lg text-lg shadow-lg">ĐÃ RÕ NHIỆM VỤ</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- GAME STATE ---
+        const GameState = {
+            isPlaying: false,
+            money: 0,
+            bowlsSold: 0,
+            criminalsCaught: 0,
+            playerHasPho: false,
+            keys: { w: false, a: false, s: false, d: false, space: false }
+        };
+
+        // --- DOM Elements ---
+        const uiMoney = document.getElementById('ui-money');
+        const uiBowls = document.getElementById('ui-bowls');
+        const uiCriminals = document.getElementById('ui-criminals');
+        const notification = document.getElementById('notification');
+        const htmlLabels = document.getElementById('html-labels');
+
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-guide').addEventListener('click', () => document.getElementById('instructions-modal').style.display = 'flex');
+        document.getElementById('btn-close-guide').addEventListener('click', () => document.getElementById('instructions-modal').style.display = 'none');
+        document.getElementById('btn-close-guide-2').addEventListener('click', () => document.getElementById('instructions-modal').style.display = 'none');
+
+        let notifTimeout;
+        function showNotification(msg) {
+            notification.textContent = msg;
+            notification.classList.add('show');
+            clearTimeout(notifTimeout);
+            notifTimeout = setTimeout(() => { notification.classList.remove('show'); }, 3000);
+        }
+
+        function updateHUD() {
+            uiMoney.textContent = GameState.money.toLocaleString('vi-VN') + 'đ';
+            uiBowls.textContent = GameState.bowlsSold + ' tô';
+            uiCriminals.textContent = GameState.criminalsCaught;
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('hud').style.display = 'block';
+            document.getElementById('mobile-controls').style.display = 'block';
+            GameState.isPlaying = true;
+            initGame();
+            showNotification("Ca làm việc bắt đầu! Chú ý quan sát.");
+        }
+
+        // --- THREE.JS SETUP ---
+        const canvas = document.getElementById('game-canvas');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x7ec0ee);
+
+        const aspect = window.innerWidth / window.innerHeight;
+        const d = 20; // Zoom level
+        const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+        // Isometric angle calculation
+        camera.position.set(20, 25, 20);
+        camera.lookAt(scene.position);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        dirLight.position.set(20, 40, 20);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -30;
+        dirLight.shadow.camera.right = 30;
+        dirLight.shadow.camera.top = 30;
+        dirLight.shadow.camera.bottom = -30;
+        scene.add(dirLight);
+
+        // --- HELPER: TEXT SPRITES ---
+        const activeLabels = [];
+        function createTextLabel(text, targetObj, offset = {x:0, y:2.5, z:0}, color = "white", bgColor = "rgba(0,0,0,0.6)") {
+            const el = document.createElement('div');
+            el.className = 'floating-text';
+            el.innerHTML = `<span style="background:${bgColor}; padding:2px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.3); display:inline-block;">${text}</span>`;
+            htmlLabels.appendChild(el);
+            activeLabels.push({ element: el, target: targetObj, offset: offset });
+            return el;
+        }
+
+        function updateLabels() {
+            const widthHalf = window.innerWidth / 2;
+            const heightHalf = window.innerHeight / 2;
+
+            activeLabels.forEach(label => {
+                if(!label.target || !label.target.parent) {
+                    label.element.style.display = 'none';
+                    return;
+                }
+                label.element.style.display = 'block';
+                
+                const pos = new THREE.Vector3().copy(label.target.position);
+                pos.x += label.offset.x;
+                pos.y += label.offset.y;
+                pos.z += label.offset.z;
+                
+                pos.project(camera);
+                
+                const x = (pos.x * widthHalf) + widthHalf;
+                const y = -(pos.y * heightHalf) + heightHalf;
+                
+                label.element.style.left = `${x}px`;
+                label.element.style.top = `${y}px`;
+            });
+        }
+
+        // --- ENVIRONMENT BUILDING ---
+        const objects = []; // For collision detection later if needed
+
+        // 1. Street (Đường Phố)
+        const streetGeo = new THREE.PlaneGeometry(80, 16);
+        const streetMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const street = new THREE.Mesh(streetGeo, streetMat);
+        street.rotation.x = -Math.PI / 2;
+        street.position.set(0, 0, 4);
+        street.receiveShadow = true;
+        scene.add(street);
+
+        // Road Lines
+        for(let i = -35; i <= 35; i+= 6) {
+            const line = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.4), new THREE.MeshBasicMaterial({color: 0xffffff}));
+            line.rotation.x = -Math.PI/2;
+            line.position.set(i, 0.02, 4);
+            scene.add(line);
+        }
+
+        // Sidewalks (Vỉa hè)
+        const swGeo = new THREE.BoxGeometry(80, 0.4, 12);
+        const swMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af });
+        
+        const swTop = new THREE.Mesh(swGeo, swMat);
+        swTop.position.set(0, 0.2, -10);
+        swTop.receiveShadow = true;
+        scene.add(swTop);
+
+        const swBot = new THREE.Mesh(swGeo, swMat);
+        swBot.position.set(0, 0.2, 18);
+        swBot.receiveShadow = true;
+        scene.add(swBot);
+
+        // --- BUILDINGS ---
+        function createBuilding(x, z, width, depth, color, name, isJail = false) {
+            const bMat = new THREE.MeshStandardMaterial({ color: color });
+            const building = new THREE.Mesh(new THREE.BoxGeometry(width, 10, depth), bMat);
+            building.position.set(x, 5.2, z);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            scene.add(building);
+
+            // Roof
+            const rMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(width+1, 0.5, depth+1), rMat);
+            roof.position.set(x, 10.45, z);
+            scene.add(roof);
+
+            // Sign / Label
+            createTextLabel(name, building, {x:0, y:6, z: depth/2 + 0.5}, "white", color === 0x1d4ed8 ? "blue" : (color === 0x9333ea ? "purple" : "orange"));
+
+            if(isJail) {
+                // Add bars
+                const barGeo = new THREE.CylinderGeometry(0.1, 0.1, 3);
+                const barMat = new THREE.MeshStandardMaterial({color: 0x555555});
+                for(let i=-2; i<=2; i+=0.8) {
+                    let bar = new THREE.Mesh(barGeo, barMat);
+                    bar.position.set(x + i, 2, z + depth/2 + 0.1);
+                    scene.add(bar);
+                }
+            }
+        }
+
+        // Đồn Công An (Police Station)
+        createBuilding(-20, -14, 12, 8, 0x1d4ed8, "ĐỒN CÔNG AN<br><span style='font-size:8px'>+ NHÀ TÙ</span>", true);
+        
+        // Tiệm Net (Cyber Cafe)
+        createBuilding(-15, 22, 15, 8, 0x9333ea, "TIỆM NET<br><span style='font-size:8px'>CYBER GAMING</span>");
+        
+        // Tạp Hóa (Grocery)
+        createBuilding(15, 22, 12, 8, 0xf97316, "TẠP HÓA<br><span style='font-size:8px'>CÔ TÁM</span>");
+
+        // 2. Tiệm Phở Quẹo (Main Area)
+        const shopFloor = new THREE.Mesh(new THREE.BoxGeometry(20, 0.5, 10), new THREE.MeshStandardMaterial({color: 0xfde047})); // Yellowish floor
+        shopFloor.position.set(5, 0.25, -11);
+        shopFloor.receiveShadow = true;
+        scene.add(shopFloor);
+        createTextLabel("🍜 TIỆM PHỞ QUẸO", shopFloor, {x:0, y:4, z:-4}, "yellow", "rgba(185,28,28,0.8)");
+
+        // Pho Cooking Station (Quầy Phở)
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(5, 2.5, 2), new THREE.MeshStandardMaterial({color: 0xa16207}));
+        counter.position.set(-2, 1.25, -13);
+        counter.castShadow = true;
+        scene.add(counter);
+
+        // Nồi Nước Lèo
+        const potGeo = new THREE.CylinderGeometry(0.8, 0.8, 1.2, 16);
+        const potMat = new THREE.MeshStandardMaterial({color: 0xd4d4d8, metalness: 0.8, roughness: 0.2});
+        const pot = new THREE.Mesh(potGeo, potMat);
+        pot.position.set(-2, 3.1, -13);
+        pot.castShadow = true;
+        scene.add(pot);
+        
+        // Steam effect (simple boxes)
+        const steams = [];
+        for(let i=0; i<3; i++) {
+            let steam = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.5}));
+            steam.position.set(-2 + Math.random()-0.5, 4 + i*0.5, -13 + Math.random()-0.5);
+            scene.add(steam);
+            steams.push(steam);
+        }
+
+        // Bàn ghế (Tables & Chairs)
+        const tables = [];
+        function createTableSet(x, z) {
+            const tableGrp = new THREE.Group();
+            
+            // Inox Table
+            const tTop = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.1, 2.5), new THREE.MeshStandardMaterial({color: 0xd1d5db, metalness:0.5}));
+            tTop.position.set(0, 1.2, 0); tTop.castShadow = true; tableGrp.add(tTop);
+            const tLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.2), new THREE.MeshStandardMaterial({color: 0x9ca3af}));
+            tLeg.position.set(0, 0.6, 0); tableGrp.add(tLeg);
+
+            // Plastic Chairs (Red/Blue)
+            const cMat = new THREE.MeshStandardMaterial({color: Math.random() > 0.5 ? 0xef4444 : 0x3b82f6});
+            const offsets = [{x: 1.5, z:0}, {x: -1.5, z:0}, {x:0, z: 1.5}, {x:0, z: -1.5}];
+            offsets.forEach(off => {
+                let chair = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), cMat);
+                chair.position.set(off.x, 0.3, off.z);
+                chair.castShadow = true;
+                tableGrp.add(chair);
+            });
+
+            tableGrp.position.set(x, 0, z);
+            scene.add(tableGrp);
+            tables.push({ mesh: tableGrp, x: x, z: z, occupied: false, npc: null });
+        }
+        createTableSet(3, -9);
+        createTableSet(9, -9);
+        createTableSet(6, -13);
+
+        // Gia đình Anh Quẹo (Wife & Kids)
+        function createStaticNPC(x, z, color, size, isWife) {
+            const npc = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(size, size*2, size), new THREE.MeshStandardMaterial({color: color}));
+            body.position.y = size; body.castShadow = true; npc.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(size*0.8, size*0.8, size*0.8), new THREE.MeshStandardMaterial({color: 0xffcc99}));
+            head.position.y = size*2 + size*0.4; npc.add(head);
+            npc.position.set(x, 0.4, z);
+            scene.add(npc);
+            return npc;
+        }
+        const wife = createStaticNPC(0, -14, 0xec4899, 0.7, true); // Pink dress
+        createTextLabel("Vợ", wife, {x:0, y:2.5, z:0}, "white", "transparent");
+        
+        const kid1 = createStaticNPC(12, -14, 0x34d399, 0.5, false);
+        const kid2 = createStaticNPC(13, -14.5, 0xfcd34d, 0.4, false);
+        createTextLabel("Con", kid1, {x:0, y:1.5, z:0}, "white", "transparent");
+
+        // --- PLAYER (Anh Quẹo) ---
+        const playerGrp = new THREE.Group();
+        // Body (Cop under cover - plain shirt)
+        const pBody = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshStandardMaterial({color: 0x0f172a}));
+        pBody.position.y = 0.9; pBody.castShadow = true; playerGrp.add(pBody);
+        // Head
+        const pHead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({color: 0xffcc99}));
+        pHead.position.y = 2.2; pHead.castShadow = true; playerGrp.add(pHead);
+        
+        // Held Pho Bowl
+        const pBowl = new THREE.Group();
+        const bBase = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.3, 0.4, 16), new THREE.MeshStandardMaterial({color: 0xffffff}));
+        const bSoup = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.05, 16), new THREE.MeshStandardMaterial({color: 0xd97706}));
+        bSoup.position.y = 0.2;
+        pBowl.add(bBase); pBowl.add(bSoup);
+        pBowl.position.set(0, 1.2, 0.8);
+        pBowl.visible = false;
+        playerGrp.add(pBowl);
+
+        playerGrp.position.set(2, 0.4, -10);
+        scene.add(playerGrp);
+        createTextLabel("Anh Quẹo (CS Ngầm)", playerGrp, {x:0, y:3, z:0}, "yellow", "rgba(0,0,0,0.5)");
+
+        // Cậu Vàng (Dog)
+        const dogGrp = new THREE.Group();
+        const dBody = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 1.2), new THREE.MeshStandardMaterial({color: 0xb45309})); // Brown
+        dBody.position.y = 0.35; dBody.castShadow = true; dogGrp.add(dBody);
+        const dHead = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({color: 0xb45309}));
+        dHead.position.set(0, 0.8, 0.7); dogGrp.add(dHead);
+        dogGrp.position.set(4, 0.4, -8);
+        scene.add(dogGrp);
+        createTextLabel("🐕 Vàng", dogGrp, {x:0, y:1.5, z:0}, "orange", "transparent");
+
+        // --- NPCs LOGIC ---
+        let npcs = [];
+        const gangNames = ["GS", "SBTC", "WK", "TL", "LOW"];
+        
+        function spawnNPC() {
+            if(!GameState.isPlaying || npcs.length > 6) return;
+
+            const isCriminal = Math.random() < 0.3; // 30% chance
+            const npcGrp = new THREE.Group();
+            
+            let color, name, type, speed;
+
+            if(isCriminal) {
+                const isDogThief = Math.random() < 0.3;
+                color = isDogThief ? 0x111111 : 0x7f1d1d; // Black or Dark Red
+                name = isDogThief ? "Trộm Chó" : `Giang hồ ${gangNames[Math.floor(Math.random()*gangNames.length)]}`;
+                type = 'criminal';
+                speed = 0.12 + Math.random() * 0.05;
+            } else {
+                const rand = Math.random();
+                if(rand < 0.3) { color = 0x22c55e; name = "C.A Phường"; }
+                else if(rand < 0.5) { color = 0xfacc15; name = "CĐV MU"; }
+                else if(rand < 0.7) { color = 0xffffff; name = "Học Sinh"; }
+                else { color = 0x38bdf8; name = "Khách vãng lai"; }
+                type = 'customer';
+                speed = 0.06;
+            }
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshStandardMaterial({color: color}));
+            body.position.y = 0.9; body.castShadow = true; npcGrp.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({color: 0xffcc99}));
+            head.position.y = 2.2; npcGrp.add(head);
+
+            // Add pho bowl for eating state
+            const nBowl = pBowl.clone();
+            nBowl.visible = false;
+            npcGrp.add(nBowl);
+
+            // Spawn pos
+            const startX = Math.random() > 0.5 ? -35 : 35;
+            const startZ = 2 + Math.random() * 6; // On the road
+            npcGrp.position.set(startX, 0.4, startZ);
+            scene.add(npcGrp);
+
+            // Label
+            const labelEl = createTextLabel(name, npcGrp, {x:0, y:3.5, z:0}, isCriminal ? "red" : "white", "rgba(0,0,0,0.7)");
+
+            let targetTable = null;
+            if(type === 'customer') {
+                const emptyTables = tables.filter(t => !t.occupied);
+                if(emptyTables.length > 0) {
+                    targetTable = emptyTables[Math.floor(Math.random() * emptyTables.length)];
+                    targetTable.occupied = true;
+                }
+            }
+
+            if(isCriminal) {
+                showNotification(`Cậu Vàng sủa: Gâu gâu! Phát hiện ${name}!`);
+            }
+
+            npcs.push({
+                mesh: npcGrp,
+                type: type,
+                state: (type === 'customer' && targetTable) ? 'walking_in' : (type === 'criminal' ? 'running' : 'walking_pass'),
+                target: targetTable,
+                speed: speed,
+                bowlMesh: nBowl,
+                labelEl: labelEl,
+                waitTime: 0
+            });
+        }
+
+        // --- CONTROLS ---
+        const joyZone = document.getElementById('joystick-zone');
+        const joyKnob = document.getElementById('joystick-knob');
+        const btnAction = document.getElementById('action-btn');
+        let joyActive = false;
+        let joyVec = {x: 0, z: 0};
+        const maxRadius = 40;
+
+        // Touch
+        joyZone.addEventListener('touchstart', handleJoy, {passive: false});
+        joyZone.addEventListener('touchmove', handleJoy, {passive: false});
+        joyZone.addEventListener('touchend', endJoy);
+        
+        function handleJoy(e) {
+            e.preventDefault();
+            joyActive = true;
+            const touch = e.touches[0];
+            const rect = joyZone.getBoundingClientRect();
+            const cx = rect.left + rect.width/2;
+            const cy = rect.top + rect.height/2;
+            
+            let dx = touch.clientX - cx;
+            let dy = touch.clientY - cy;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if(dist > maxRadius) { dx = (dx/dist)*maxRadius; dy = (dy/dist)*maxRadius; }
+            
+            joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            joyVec.x = dx / maxRadius;
+            joyVec.z = dy / maxRadius;
+        }
+        function endJoy() {
+            joyActive = false; joyVec = {x:0, z:0};
+            joyKnob.style.transform = `translate(-50%, -50%)`;
+        }
+
+        // Keyboard
+        window.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if(GameState.keys.hasOwnProperty(k)) GameState.keys[k] = true;
+            if(k === ' ' || k === 'space') { e.preventDefault(); performAction(); }
+        });
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if(GameState.keys.hasOwnProperty(k)) GameState.keys[k] = false;
+        });
+
+        // Action
+        btnAction.addEventListener('touchstart', (e) => { e.preventDefault(); performAction(); });
+        btnAction.addEventListener('mousedown', (e) => { e.preventDefault(); performAction(); });
+
+        function dist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x, 2) + Math.pow(p1.z-p2.z, 2)); }
+
+        function performAction() {
+            if(!GameState.isPlaying) return;
+
+            const pPos = playerGrp.position;
+
+            // 1. Check Nồi Phở
+            if(dist(pPos, pot.position) < 4) {
+                if(!GameState.playerHasPho) {
+                    GameState.playerHasPho = true;
+                    pBowl.visible = true;
+                    showNotification("Đã múc 1 tô phở. Mau đem cho khách!");
+                } else {
+                    showNotification("Bạn đang cầm phở rồi!");
+                }
+                return;
+            }
+
+            // 2. Interact with NPCs
+            for(let i = npcs.length - 1; i >= 0; i--) {
+                const npc = npcs[i];
+                const d = dist(pPos, npc.mesh.position);
+
+                if(d < 4) {
+                    if(npc.type === 'criminal') {
+                        // Catch criminal
+                        removeNPC(npc, i);
+                        GameState.money += 200000;
+                        GameState.criminalsCaught++;
+                        updateHUD();
+                        showNotification("Tuyệt vời! Đã tống cổ tội phạm vào đồn (+200k)");
+                        return;
+                    } 
+                    else if (npc.type === 'customer' && npc.state === 'waiting') {
+                        // Serve Pho
+                        if(GameState.playerHasPho) {
+                            GameState.playerHasPho = false;
+                            pBowl.visible = false;
+                            npc.state = 'eating';
+                            npc.bowlMesh.visible = true;
+                            
+                            GameState.money += 45000;
+                            GameState.bowlsSold++;
+                            updateHUD();
+                            showNotification("Đã thu tiền phở (+45k)");
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if(GameState.playerHasPho) showNotification("Hãy mang phở tới bàn khách đang đợi.");
+            else showNotification("Lại gần Nồi phở hoặc Tội phạm để thao tác.");
+        }
+
+        function removeNPC(npc, index) {
+            scene.remove(npc.mesh);
+            if(npc.labelEl && npc.labelEl.parentNode) npc.labelEl.parentNode.removeChild(npc.labelEl);
+            const lIdx = activeLabels.findIndex(l => l.element === npc.labelEl);
+            if(lIdx > -1) activeLabels.splice(lIdx, 1);
+            if(npc.target) npc.target.occupied = false;
+            npcs.splice(index, 1);
+        }
+
+        // --- GAME LOOP ---
+        let lastTime = Date.now();
+        let spawnTimer = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(!GameState.isPlaying) { renderer.render(scene, camera); return; }
+
+            const now = Date.now();
+            const delta = now - lastTime;
+            lastTime = now;
+
+            // Steam Animation
+            steams.forEach(s => {
+                s.position.y += 0.02;
+                s.material.opacity -= 0.01;
+                if(s.position.y > 5.5) { s.position.y = 4; s.material.opacity = 0.5; }
+            });
+
+            // Player Movement (Combine Joy + Keys)
+            let moveX = joyVec.x;
+            let moveZ = joyVec.z;
+
+            if(GameState.keys.w) moveZ = -1;
+            if(GameState.keys.s) moveZ = 1;
+            if(GameState.keys.a) moveX = -1;
+            if(GameState.keys.d) moveX = 1;
+
+            if(moveX !== 0 || moveZ !== 0) {
+                // Normalize
+                const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
+                const speed = 0.2;
+                const finalX = (moveX/len) * speed;
+                const finalZ = (moveZ/len) * speed;
+
+                playerGrp.position.x += finalX;
+                playerGrp.position.z += finalZ;
+
+                // Simple boundaries
+                playerGrp.position.x = Math.max(-35, Math.min(35, playerGrp.position.x));
+                playerGrp.position.z = Math.max(-18, Math.min(20, playerGrp.position.z));
+
+                // Rotation
+                playerGrp.rotation.y = Math.atan2(finalX, finalZ);
+
+                // Dog Follows Player
+                const dx = playerGrp.position.x - dogGrp.position.x;
+                const dz = playerGrp.position.z - dogGrp.position.z;
+                const distDog = Math.sqrt(dx*dx + dz*dz);
+                if(distDog > 3) {
+                    dogGrp.position.x += dx * 0.05;
+                    dogGrp.position.z += dz * 0.05;
+                    dogGrp.rotation.y = Math.atan2(dx, dz);
+                }
+            }
+
+            // NPC Logic
+            spawnTimer += delta;
+            if(spawnTimer > 4000) { spawnNPC(); spawnTimer = 0; }
+
+            for(let i = npcs.length - 1; i >= 0; i--) {
+                let npc = npcs[i];
+                let p = npc.mesh.position;
+
+                if(npc.state === 'running' || npc.state === 'walking_pass') {
+                    p.x += (p.x > 0 ? -npc.speed : npc.speed);
+                    npc.mesh.rotation.y = p.x > 0 ? -Math.PI/2 : Math.PI/2;
+                    if(Math.abs(p.x) > 36) removeNPC(npc, i);
+                } 
+                else if(npc.state === 'walking_in' && npc.target) {
+                    const tx = npc.target.x; const tz = npc.target.z - 2;
+                    const dx = tx - p.x; const dz = tz - p.z;
+                    const d = Math.sqrt(dx*dx + dz*dz);
+                    if(d > 0.2) {
+                        p.x += (dx/d)*npc.speed; p.z += (dz/d)*npc.speed;
+                        npc.mesh.rotation.y = Math.atan2(dx, dz);
+                    } else {
+                        npc.state = 'waiting';
+                        npc.mesh.rotation.y = Math.PI; // Face forward
+                    }
+                }
+                else if(npc.state === 'eating') {
+                    npc.waitTime += delta;
+                    // Move bowl up and down to simulate eating
+                    npc.bowlMesh.position.y = 1.2 + Math.sin(npc.waitTime * 0.01) * 0.2;
+                    if(npc.waitTime > 5000) { // Eat for 5s
+                        npc.state = 'leaving';
+                        npc.bowlMesh.visible = false;
+                    }
+                }
+                else if(npc.state === 'leaving') {
+                    p.z += npc.speed; // Walk back to street
+                    npc.mesh.rotation.y = 0;
+                    if(p.z > 5) npc.state = 'walking_pass'; // Join street traffic
+                }
+            }
+
+            updateLabels();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.left = -d * aspect; camera.right = d * aspect;
+            camera.top = d; camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function initGame() {
+            GameState.money = 0; GameState.bowlsSold = 0; GameState.criminalsCaught = 0;
+            updateHUD();
+            [...npcs].forEach((n, i) => removeNPC(n, i));
+            playerGrp.position.set(2, 0.4, -10);
+            dogGrp.position.set(4, 0.4, -8);
+        }
+
+        animate(); // Start immediately for background rendering
+    </script>
+</body>
+</html>
+
